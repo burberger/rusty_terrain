@@ -1,0 +1,7 @@
+[package]
+name = "rusty_terrain"
+version = "0.1.0"
+authors = ["Bob Urberger <burberger@gmail.com>"]
+
+[dependencies]
+ndarray = "0.9.1"
