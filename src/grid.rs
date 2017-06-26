@@ -105,17 +105,13 @@ pub fn diamond_square(grid: &mut GridViewMut, rng: &mut FnMut() -> f64) {
          * a slice of the main grid over some combination of bounds.
          */
 
-        // Find the grid ranges for the different bounds.
-        let center_bound = ..center+1;
-        let edge_bound = center..;
-
         // Top left corner.
-        diamond_square(&mut grid.slice_mut(s![center_bound, center_bound]), rng);
+        diamond_square(&mut grid.slice_mut(s![..center+1, ..center+1]), rng);
         // Top right corner.
-        diamond_square(&mut grid.slice_mut(s![edge_bound, center_bound]), rng);
+        diamond_square(&mut grid.slice_mut(s![center.., ..center+1]), rng);
         // Bottom left corner.
-        diamond_square(&mut grid.slice_mut(s![center_bound, edge_bound]), rng);
+        diamond_square(&mut grid.slice_mut(s![..center+1, center..]), rng);
         // Bottom right corner.
-        diamond_square(&mut grid.slice_mut(s![edge_bound, edge_bound]), rng);
+        diamond_square(&mut grid.slice_mut(s![center.., center..]), rng);
     }
 }
