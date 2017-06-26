@@ -1,95 +1,66 @@
 #[macro_use(s)]
 extern crate ndarray;
 extern crate rand;
+extern crate image;
+extern crate kiss3d;
+extern crate nalgebra as na;
 
-use ndarray::prelude::*;
+use std::fs::File;
+use std::path::Path;
+
 use rand::distributions::{Normal, IndependentSample};
+use image::ImageBuffer;
+use na::{Point3, Vector3};
+use kiss3d::window::Window;
+use kiss3d::light::Light;
 
-#[allow(dead_code)]
-fn pretty_print_grid(grid: &ArrayViewMut2<f64>) {
-    for lane in grid.lanes(Axis(1)) {
-        for val in lane {
-            print!("| {:>7.4} ", val);
+mod grid;
+
+fn draw_to_image(grid: &grid::Grid) {
+    let dim = grid.dim().0 as u32;
+    let img = ImageBuffer::from_fn(dim, dim, |x, y| {
+        let value = grid[[x as usize, y as usize]];
+        if value >= 0.0 {
+            image::Rgb([(value * 255.0) as u8, 0u8, 0u8])
+        } else {
+            image::Rgb([0u8, 0u8, (-value * 255.0) as u8])
         }
-        println!("|");
-    }
+    });
+    let ref mut fout = File::create(&Path::new("test.png")).unwrap();
+    let _ = image::ImageRgb8(img).save(fout, image::PNG);
 }
 
-fn corner(index: usize, grid: &ArrayViewMut2<f64>) -> f64 {
-    let bound = grid.dim().0 - 1;
-    match index {
-        0 => grid[[0, 0]],
-        1 => grid[[0, bound]],
-        2 => grid[[bound, 0]],
-        3 => grid[[bound, bound]],
-        _ => panic!("Invalid corner index")
-    }
-}
+fn draw_3d(grid: &grid::Grid, size: f32) {
+    let dim = grid.dim().0;
+    let mut window = Window::new("3d terrain");
+    window.set_light(Light::StickToCamera);
 
-fn corner_mut<'a>(index: usize, grid: &'a mut ArrayViewMut2<f64>) -> &'a mut f64 {
-    let bound = grid.dim().0 - 1;
-    match index {
-        0 => &mut grid[[0, 0]],
-        1 => &mut grid[[0, bound]],
-        2 => &mut grid[[bound, 0]],
-        3 => &mut grid[[bound, bound]],
-        _ => panic!("Invalid corner index")
-    }
-}
+    let mut surface = window.add_quad(size, size, dim, dim);
+    surface.set_color(1.0, 0.0, 0.0);
+    let zero = Point3::new(0.0, 0.0, 0.0);
+    let point = Point3::new(0.0, 0.0, -1.0);
+    let up = Vector3::new(0.0, 0.0, 0.0);
+    surface.reorient(&zero, &point, &up);
 
-fn build_grid(n: u32, corner_values: &[f64; 4]) -> Array2<f64> {
-    let dim = (2_u32.pow(n) + 1) as usize;
-    let mut grid = Array2::<f64>::zeros((dim, dim));
-    // map the initial condition to the corners of the matrix in row major order.
-    for i in 0..4 {
-        let ref mut grid_view = grid.view_mut();
-        *corner_mut(i, grid_view) = corner_values[i];
-    }
-
-    grid
-}
-
-fn diamond_square(grid: &mut ArrayViewMut2<f64>, rng: &mut FnMut() -> f64) {
-    let bound = grid.dim().0 - 1;
-    let center = bound / 2;
-    let corner_avg = (0..4).map(|i| corner(i, grid)).fold(0.0, |sum, i| sum + i) / 4.0;
-
-    // Diamond processing step.
-    grid[[center, center]] = corner_avg + rng();
-
-    // Square processing step.
-    grid[[0, center]] = corner_avg + rng();
-    grid[[center, 0]] = corner_avg + rng();
-    grid[[center, bound]] = corner_avg + rng();
-    grid[[bound, center]] = corner_avg + rng();
-
-    // Recursively process the rest of the grid. With bound = 2, we're out of work to do.
-    let center = center as isize;
-    if bound > 2 {
-        // Top left corner.
-        diamond_square(&mut grid.slice_mut(s![..center+1, ..center+1]), rng);
-        // Top right corner.
-        diamond_square(&mut grid.slice_mut(s![center.., ..center+1]), rng);
-        // Bottom left corner.
-        diamond_square(&mut grid.slice_mut(s![..center+1, center..]), rng);
-        // Bottom right corner.
-        diamond_square(&mut grid.slice_mut(s![center.., center..]), rng);
-    }
+    while window.render() {}
 }
 
 fn main() {
     // Seed values for the 4 corners.
-    let corner_values: [f64; 4] = [0.5, 0.1, 0.2, 0.7];
+    let corner_values: [f64; 4] = [0.05, 0.1, 0.2, 0.07];
     // Construct an initialized matrix for the generated terrain.
-    let mut grid = build_grid(8, &corner_values);
+    let mut grid = grid::build_grid(5, &corner_values);
 
     let mut rng = rand::thread_rng();
-    let normal = Normal::new(1.0, 3.0);
+    let normal = Normal::new(1.0, 6.0);
     let ref mut get_sample = || normal.ind_sample(&mut rng);
 
     let ref mut grid_view = grid.view_mut();
-    diamond_square(grid_view, get_sample);
+    grid::diamond_square(grid_view, get_sample);
 
-    let shape = grid_view.dim().0;
-       
+    let mut img_grid = grid::copy_grid(grid_view);
+    grid::scale_dynamic_range(&mut img_grid.view_mut(), -1, 1);
+    draw_to_image(&img_grid);
+
+    draw_3d(&img_grid, 50.0);
 }
